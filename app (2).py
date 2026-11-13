@@ -1,25 +1,20 @@
-"""
-Energy Cluster Predictor
-Machine Learning: K-Means Clustering
-Framework: Streamlit
 
-Run:
-python -m streamlit run app.py
+"""
+app.py
+Energy Cluster Predictor using K-Means
+Run: streamlit run app.py
 """
 
 import os
 import joblib
+import numpy as np
 import pandas as pd
-import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+import streamlit as st
 
-from pathlib import Path
 
-
-# =====================================================
-# 1. PAGE CONFIGURATION
-# =====================================================
+# ---------- Page Configuration ----------
 
 st.set_page_config(
     page_title="Energy Cluster Predictor",
@@ -27,126 +22,52 @@ st.set_page_config(
     layout="wide"
 )
 
-BASE_DIR = Path(__file__).resolve().parent
 
+# ---------- Step 1: Load Model and Dataset ----------
 
-# =====================================================
-# 2. FILE HANDLING
-# =====================================================
+MODEL_PATH = "model/kmeans_model.joblib"
+DATA_PATH = "data/energy_clustered.csv"
 
-def find_file(filename):
-
-    possible_paths = [
-        BASE_DIR / filename,
-        BASE_DIR / "model" / filename,
-        BASE_DIR / "data" / filename
-    ]
-
-    for path in possible_paths:
-        if path.is_file():
-            return path
-
-    st.error(f"❌ Required file not found: {filename}")
-
-    st.info(
-        "Please check your GitHub repository. "
-        "The required file must be uploaded."
-    )
-
-    st.write("Files detected in your project:")
-
-    for path in BASE_DIR.rglob("*"):
-        if path.is_file() and ".git" not in path.parts:
-            st.write(str(path.relative_to(BASE_DIR)))
-
+if not os.path.exists(MODEL_PATH):
+    st.error(f"Model file not found: {MODEL_PATH}")
+    st.info("Make sure the trained K-Means model is saved in the model folder.")
     st.stop()
 
+if not os.path.exists(DATA_PATH):
+    st.error(f"Dataset not found: {DATA_PATH}")
+    st.info("Make sure energy_clustered.csv is inside the data folder.")
+    st.stop()
 
-# =====================================================
-# 3. LOAD TRAINED MODEL
-# =====================================================
-
-@st.cache_resource
-def load_model():
-
-    model_path = find_file("kmeans_model.joblib")
-
-    saved = joblib.load(model_path)
+try:
+    saved = joblib.load(MODEL_PATH)
 
     model = saved["model"]
     scaler = saved["scaler"]
-    features = saved["features"]
+    FEATURES = saved["features"]
 
-    return model, scaler, features
-
-
-try:
-
-    model, scaler, FEATURES = load_model()
+    data = pd.read_csv(DATA_PATH)
 
 except Exception as e:
-
-    st.error(f"Model loading failed: {e}")
+    st.error(f"Error loading model or dataset: {e}")
     st.stop()
 
 
-# =====================================================
-# 4. LOAD DATASET
-# =====================================================
+# ---------- Step 2: Validate Dataset ----------
 
-@st.cache_data
-def load_data():
+required_columns = FEATURES + ["cluster"]
 
-    clustered_path = BASE_DIR / "energy_clustered.csv"
+if not all(col in data.columns for col in required_columns):
+    st.error(
+        f"Dataset must contain these columns: {required_columns}"
+    )
+    st.stop()
 
-    if not clustered_path.is_file():
-        clustered_path = BASE_DIR / "data" / "energy_clustered.csv"
-
-    if clustered_path.is_file():
-
-        data = pd.read_csv(clustered_path)
-
-    else:
-
-        data = pd.read_csv(find_file("energy_data.csv"))
-
-        data["cluster"] = model.predict(
-            scaler.transform(data[FEATURES])
-        )
-
-    return data
-
-
-try:
-
-    data = load_data()
-
-    # Validate dataset
-    required_columns = FEATURES
-
-    missing_columns = [
-        col for col in required_columns
-        if col not in data.columns
-    ]
-
-    if missing_columns:
-        st.error(f"Missing dataset columns: {missing_columns}")
-        st.stop()
-
-    if "cluster" not in data.columns:
-        data["cluster"] = model.predict(
-            scaler.transform(data[FEATURES])
-        )
-
-except Exception as e:
-
-    st.error(f"Dataset loading failed: {e}")
+if data.empty:
+    st.error("The dataset is empty.")
     st.stop()
 
 
-# =====================================================
-# 5. CLUSTER INTERPRETATION
-# =====================================================
+# ---------- Step 3: Calculate Cluster Centres ----------
 
 centres = pd.DataFrame(
     scaler.inverse_transform(model.cluster_centers_),
@@ -182,33 +103,32 @@ for i, row in centres.iterrows():
         else "Cool"
     )
 
-    names[i] = f"{energy_level} Usage · {weather} Weather"
+    names[i] = f"{energy_level} usage · {weather} weather"
 
-    advice[i] = (
-        "Heavy energy consumption detected. "
-        "Consider shifting usage away from peak hours "
-        "and using energy-efficient equipment."
-        if energy_level == "High"
-        else
-        "Lower energy consumption detected. "
-        "This represents relatively efficient energy usage."
-    )
+    if energy_level == "High":
+        advice[i] = (
+            "Heavy load: shift usage away from peak hours "
+            "and use energy-efficient equipment."
+        )
+    else:
+        advice[i] = (
+            "Light load: this cluster represents relatively "
+            "lower energy consumption."
+        )
 
 data["segment"] = data["cluster"].map(names)
 
 
-# =====================================================
-# 6. CUSTOM PAGE DESIGN
-# =====================================================
+# ---------- Step 4: Page Styling ----------
 
 st.markdown("""
 <style>
 
 .hero {
-    padding: 30px;
+    padding: 26px 30px;
     border-radius: 18px;
     color: white;
-    margin-bottom: 25px;
+    margin-bottom: 20px;
     background: linear-gradient(
         120deg,
         #00B894,
@@ -219,16 +139,15 @@ st.markdown("""
 
 .hero h1 {
     margin: 0;
-    font-size: 36px;
 }
 
 .hero p {
-    margin-top: 10px;
-    font-size: 16px;
+    margin: 6px 0 0;
+    opacity: 0.95;
 }
 
 .result {
-    padding: 25px;
+    padding: 22px;
     border-radius: 16px;
     background: #1A1F2B;
     border-left: 7px solid var(--c);
@@ -240,30 +159,25 @@ st.markdown("""
 }
 
 .result p {
+    margin: 8px 0 0;
     color: #D0D6E0;
 }
 
 </style>
 
 <div class="hero">
-
-<h1>⚡ Energy Cluster Predictor</h1>
-
-<p>
-Analyze energy consumption patterns using
-Machine Learning and K-Means Clustering.
-</p>
-
+    <h1>⚡ Energy Cluster Predictor</h1>
+    <p>
+        Enter your energy consumption and temperature.
+        The K-Means model predicts the corresponding energy group.
+    </p>
 </div>
-
 """, unsafe_allow_html=True)
 
 
-# =====================================================
-# 7. SIDEBAR INPUT
-# =====================================================
+# ---------- Step 5: User Input ----------
 
-st.sidebar.header("⚙️ Enter Energy Details")
+st.sidebar.header("🔧 Enter Values")
 
 energy = st.sidebar.slider(
     "Energy Consumption (kWh)",
@@ -281,14 +195,10 @@ temperature = st.sidebar.slider(
     step=0.1
 )
 
-st.sidebar.caption(
-    "Adjust the values to predict the energy cluster."
-)
+st.sidebar.caption("Ranges should match the training data.")
 
 
-# =====================================================
-# 8. SINGLE PREDICTION
-# =====================================================
+# ---------- Step 6: Prediction ----------
 
 new_data = pd.DataFrame(
     [[energy, temperature]],
@@ -302,26 +212,20 @@ cluster = int(model.predict(new_scaled)[0])
 color = COLORS[cluster % len(COLORS)]
 
 
-# =====================================================
-# 9. DISPLAY PREDICTION
-# =====================================================
+# ---------- Step 7: Display Prediction ----------
 
 left, right = st.columns([1, 1.4])
 
 with left:
 
-    st.subheader("🎯 Prediction Result")
+    st.subheader("🔍 Prediction")
 
     st.markdown(
         f"""
         <div class="result" style="--c:{color}">
-
-        <h2>Cluster {cluster}</h2>
-
-        <h3>{names[cluster]}</h3>
-
-        <p>{advice[cluster]}</p>
-
+            <h2>Cluster {cluster}</h2>
+            <b>{names[cluster]}</b>
+            <p>{advice[cluster]}</p>
         </div>
         """,
         unsafe_allow_html=True
@@ -332,9 +236,9 @@ with left:
     c1, c2 = st.columns(2)
 
     c1.metric(
-        "Energy Consumption",
-        f"{energy:.1f} kWh",
-        f"{energy - avg_energy:+.1f} vs average"
+        "Your Energy",
+        f"{energy:.0f} kWh",
+        f"{energy - avg_energy:+.0f} vs average"
     )
 
     c2.metric(
@@ -343,12 +247,16 @@ with left:
         f"{temperature - avg_temp:+.1f} vs average"
     )
 
-    # Distance calculation
-    distances = (
-        (new_scaled - model.cluster_centers_) ** 2
-    ).sum(axis=1) ** 0.5
+    # Calculate distance from each cluster centre
 
-    st.subheader("Distance from Cluster Centres")
+    distances = np.linalg.norm(
+        new_scaled - model.cluster_centers_,
+        axis=1
+    )
+
+    st.caption(
+        "Distance to each cluster centre (smaller = closer)"
+    )
 
     distance_df = pd.DataFrame({
         "Cluster": [
@@ -362,43 +270,33 @@ with left:
         distance_df.set_index("Cluster")
     )
 
-    st.caption(
-        "A smaller distance means your reading "
-        "is closer to that cluster centre."
-    )
 
-
-# =====================================================
-# 10. CLUSTER VISUALIZATION
-# =====================================================
+# ---------- Step 8: Visualize Clusters ----------
 
 with right:
 
-    st.subheader("📊 Energy Consumption Clusters")
+    st.subheader("📊 Where Your Reading Falls")
 
-    plot_data = (
-        data.sample(
-            min(2500, len(data)),
-            random_state=1
-        )
+    sample_data = data.sample(
+        n=min(2500, len(data)),
+        random_state=1
     )
 
     fig = px.scatter(
-        plot_data,
+        sample_data,
         x="temperature",
         y="energy_consumption",
         color="segment",
-        opacity=0.55,
+        opacity=0.4,
         template="plotly_dark",
         labels={
             "temperature": "Temperature (°C)",
-            "energy_consumption": "Energy Consumption (kWh)",
-            "segment": "Energy Group"
-        },
-        title="K-Means Clustering Visualization"
+            "energy_consumption": "Energy (kWh)"
+        }
     )
 
-    # User prediction
+    # Highlight user input
+
     fig.add_trace(
         go.Scatter(
             x=[temperature],
@@ -409,15 +307,13 @@ with right:
                 size=20,
                 color="white",
                 symbol="star",
-                line=dict(
-                    width=2,
-                    color="black"
-                )
+                line=dict(width=2, color="black")
             )
         )
     )
 
-    # Cluster centres
+    # Display cluster centres
+
     fig.add_trace(
         go.Scatter(
             x=centres["temperature"],
@@ -425,7 +321,7 @@ with right:
             mode="markers",
             name="Cluster Centres",
             marker=dict(
-                size=15,
+                size=14,
                 color="red",
                 symbol="x"
             )
@@ -433,50 +329,37 @@ with right:
     )
 
     fig.update_layout(
-        height=500,
+        height=470,
         legend_title_text="",
-        margin=dict(
-            l=0,
-            r=0,
-            t=40,
-            b=0
-        )
+        margin=dict(l=0, r=0, t=10, b=0)
     )
 
     st.plotly_chart(
         fig,
-        width="stretch"
+        use_container_width=True
     )
 
 
-# =====================================================
-# 11. BATCH PREDICTION USING CSV
-# =====================================================
+# ---------- Step 9: CSV Prediction ----------
 
 st.divider()
 
-st.subheader("📁 Bulk Energy Cluster Prediction")
-
-st.write(
-    "Upload a CSV file containing energy consumption "
-    "and temperature values to predict clusters for "
-    "multiple readings."
-)
+st.subheader("📁 Predict from a CSV File")
 
 st.caption(
-    "Required columns: energy_consumption, temperature"
+    "Upload a CSV containing: energy_consumption, temperature"
 )
 
-uploaded_file = st.file_uploader(
-    "Upload your CSV file",
+file = st.file_uploader(
+    "Upload CSV",
     type=["csv"]
 )
 
-if uploaded_file is not None:
+if file is not None:
 
     try:
 
-        df_in = pd.read_csv(uploaded_file)
+        df_in = pd.read_csv(file)
 
         if set(FEATURES).issubset(df_in.columns):
 
@@ -486,21 +369,17 @@ if uploaded_file is not None:
 
             df_in["segment"] = df_in["cluster"].map(names)
 
-            st.success(
-                "Predictions generated successfully!"
-            )
+            st.success("Predictions generated successfully!")
 
             st.dataframe(
                 df_in,
                 use_container_width=True
             )
 
-            csv_output = df_in.to_csv(index=False)
-
             st.download_button(
                 label="⬇️ Download Predictions",
-                data=csv_output,
-                file_name="energy_cluster_predictions.csv",
+                data=df_in.to_csv(index=False),
+                file_name="predictions.csv",
                 mime="text/csv"
             )
 
@@ -512,76 +391,25 @@ if uploaded_file is not None:
 
     except Exception as e:
 
-        st.error(f"CSV processing error: {e}")
+        st.error(f"Error processing CSV: {e}")
 
 
-# =====================================================
-# 12. CLUSTER SUMMARY
-# =====================================================
+# ---------- Step 10: Cluster Summary ----------
 
-st.divider()
+with st.expander("📋 Cluster Summary"):
 
-with st.expander("📋 View Cluster Summary"):
-
-    summary = (
-        data.groupby("segment")
-        .agg(
-            readings=("cluster", "size"),
-            avg_energy=("energy_consumption", "mean"),
-            avg_temp=("temperature", "mean")
-        )
-        .round(2)
-    )
+    summary = data.groupby("segment").agg(
+        readings=("cluster", "size"),
+        avg_energy=("energy_consumption", "mean"),
+        avg_temp=("temperature", "mean")
+    ).round(2)
 
     st.dataframe(
         summary,
         use_container_width=True
     )
 
-    st.subheader("Cluster Distribution")
-
-    cluster_counts = (
-        data["segment"]
-        .value_counts()
-        .reset_index()
+    st.caption(
+        "Summary of energy consumption patterns "
+        "identified by the K-Means algorithm."
     )
-
-    cluster_counts.columns = [
-        "Cluster",
-        "Readings"
-    ]
-
-    fig2 = px.pie(
-        cluster_counts,
-        names="Cluster",
-        values="Readings",
-        hole=0.4,
-        title="Energy Cluster Distribution"
-    )
-
-    st.plotly_chart(
-        fig2,
-        width="stretch"
-    )
-
-
-# =====================================================
-# 13. FOOTER
-# =====================================================
-
-st.divider()
-
-st.markdown(
-    """
-    <div style="text-align:center; color:gray;">
-
-    ⚡ Energy Cluster Predictor
-
-    <br>
-
-    Powered by Machine Learning | K-Means Clustering
-
-    </div>
-    """,
-    unsafe_allow_html=True
-)
